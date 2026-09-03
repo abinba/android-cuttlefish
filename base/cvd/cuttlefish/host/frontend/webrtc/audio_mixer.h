@@ -55,6 +55,11 @@ class AudioMixer {
   // Index of the last frame with available (i.e. not yet played) audio data
   size_t last_active_frame_ = 0;
 
+  // Jitter buffer headroom cushion to prevent zero-filling dropouts
+  // when guest deliveries are bursty or unaligned (e.g. 4096-frame guest blocks vs 480-frame mixer chunks).
+  static constexpr size_t kPrebufferFrames = 4800;
+  bool is_prebuffered_ = false;
+
   // Frame index per stream to put next available data to
   std::unordered_map<uint32_t, size_t> next_frame_;
 
