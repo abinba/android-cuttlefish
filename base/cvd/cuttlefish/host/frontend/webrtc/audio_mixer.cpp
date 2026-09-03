@@ -159,6 +159,9 @@ void AudioMixer::Stop() {
 void AudioMixer::OnStreamStopped(uint32_t stream_id) {
   std::lock_guard<std::mutex> lock(mutex_);
   next_frame_.erase(stream_id);
+  if (next_frame_.empty()) {
+    is_prebuffered_ = false;
+  }
 }
 
 void AudioMixer::OnPlayback(uint32_t stream_id, uint32_t stream_sample_rate,
@@ -211,7 +214,13 @@ void AudioMixer::OnPlayback(uint32_t stream_id, uint32_t stream_sample_rate,
   last_active_frame_ =
       std::max(last_active_frame_, next_frame_id + filled_frames_count);
 
-  if (need_notify) {
+  if (!is_prebuffered_) {
+    if (last_active_frame_ >= kPrebufferFrames) {
+      is_prebuffered_ = true;
+      lock.unlock();
+      mixer_cv_.notify_one();
+    }
+  } else if (need_notify) {
     lock.unlock();
     mixer_cv_.notify_one();
   }
@@ -230,10 +239,13 @@ void AudioMixer::MixerLoop() {
       continue;
     }
 
-    if (next_frame_.empty() && last_active_frame_ == 0) {
-      // No active streams and nothing to play, block until there is
+    if ((next_frame_.empty() || !is_prebuffered_) && last_active_frame_ == 0) {
+      // No active streams or waiting for pre-buffer cushion, block until ready
       mixer_cv_.wait(
-          lock, [&]() { return !next_frame_.empty() || stop_mixer_.load(); });
+          lock, [&]() {
+            return (is_prebuffered_ && last_active_frame_ > 0) ||
+                   stop_mixer_.load();
+          });
       if (stop_mixer_.load()) {
         return;
       }
@@ -269,7 +281,9 @@ void AudioMixer::MixerLoop() {
     last_active_frame_ = last_active_frame_ > chunk_frames_count_
                              ? last_active_frame_ - chunk_frames_count_
                              : 0;
-    if (last_active_frame_ > 0) {
+    if (last_active_frame_ == 0) {
+      is_prebuffered_ = false;
+    } else {
       std::memmove(
           mixed_buffer_.data(),
           mixed_buffer_.data() + chunk_frames_count_ * frame_size_bytes_,

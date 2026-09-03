@@ -31,6 +31,7 @@
 #include "rtc_base/logging.h"
 
 #include "cuttlefish/common/libs/fs/shared_fd.h"
+#include "cuttlefish/common/libs/utils/environment.h"
 #include "cuttlefish/common/libs/utils/files.h"
 #include "cuttlefish/host/commands/assemble_cvd/proto/guest_config.pb.h"
 #include "cuttlefish/host/frontend/webrtc/audio_handler.h"
@@ -44,6 +45,7 @@
 #include "cuttlefish/host/frontend/webrtc/libdevice/streamer.h"
 #include "cuttlefish/host/frontend/webrtc/libdevice/video_sink.h"
 #include "cuttlefish/host/frontend/webrtc/screenshot_handler.h"
+#include "cuttlefish/host/frontend/webrtc/tuner_audio_source.h"
 #include "cuttlefish/host/frontend/webrtc/webrtc_command_channel.h"
 #include "cuttlefish/host/frontend/webrtc/webrtc_commands.pb.h"
 #include "cuttlefish/host/libs/audio_connector/server.h"
@@ -299,7 +301,13 @@ std::shared_ptr<AudioHandler> SetupAudio(
   std::shared_ptr<webrtc_streaming::AudioSink> audio_sink =
       streamer.AddAudioStream("audio-0");
   auto audio_server = CreateAudioServer();
-  auto audio_source = streamer.GetAudioSource();
+  auto base_audio_source = streamer.GetAudioSource();
+  std::string pcm_socket_path =
+      fmt::format("{}/vsock_{}_{}/vm.vsock_7011",
+                  cuttlefish::StringFromEnv("TEMP", "/tmp"),
+                  instance.vsock_guest_cid(), getuid());
+  auto audio_source = std::make_shared<TunerAudioSource>(
+      base_audio_source, std::move(pcm_socket_path));
 
   return std::make_shared<AudioHandler>(std::move(audio_server),
                                         std::move(audio_sink), audio_source,
