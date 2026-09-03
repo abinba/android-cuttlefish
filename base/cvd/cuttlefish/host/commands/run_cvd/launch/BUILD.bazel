@@ -543,6 +543,23 @@ cf_cc_library(
 )
 
 cf_cc_library(
+    name = "virtual_tuner_server",
+    srcs = ["virtual_tuner_server.cpp"],
+    hdrs = ["virtual_tuner_server.h"],
+    deps = [
+        "//cuttlefish/common/libs/utils:environment",
+        "//cuttlefish/common/libs/utils:files",
+        "//cuttlefish/host/libs/config:cuttlefish_config",
+        "//cuttlefish/host/libs/config:known_paths",
+        "//cuttlefish/host/libs/feature",
+        "//cuttlefish/process:command",
+        "//cuttlefish/result",
+        "@abseil-cpp//absl/log",
+        "@fmt",
+    ],
+)
+
+cf_cc_library(
     name = "vhost_device_vsock",
     srcs = ["vhost_device_vsock.cpp"],
     hdrs = ["vhost_device_vsock.h"],
