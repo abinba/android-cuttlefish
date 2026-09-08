@@ -1,7 +1,7 @@
 load("@grpc//bazel:cc_grpc_library.bzl", "cc_grpc_library")
 load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
-load("//cuttlefish/bazel:rules.bzl", "cf_cc_library", "cf_cc_test")
+load("//cuttlefish/bazel:rules.bzl", "cf_cc_binary", "cf_cc_library", "cf_cc_test")
 
 package(
     default_visibility = ["//:android_cuttlefish"],
@@ -28,17 +28,47 @@ cc_grpc_library(
 )
 
 cf_cc_library(
-    name = "tuner_state",
+    name = "virtual_tuner_core",
     srcs = [
+        "audio_generator.cpp",
+        "pcm_stream_server.cpp",
         "tuner_state.cpp",
+        "virtual_tuner_service.cpp",
     ],
     hdrs = [
+        "audio_generator.h",
+        "pcm_stream_server.h",
         "tuner_state.h",
+        "virtual_tuner_service.h",
     ],
     depend_on_what_you_use_enabled = False,
     include_cleaner_enabled = False,
     deps = [
+        ":libcvd_virtual_tuner",
         ":virtual_tuner_cc_proto",
+        "//cuttlefish/common/libs/fs",
+        "//cuttlefish/result",
+        "//libbase",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/strings",
+        "@grpc//:grpc++",
+    ],
+)
+
+cf_cc_binary(
+    name = "virtual_tuner_daemon",
+    srcs = [
+        "main.cpp",
+    ],
+    depend_on_what_you_use_enabled = False,
+    include_cleaner_enabled = False,
+    deps = [
+        ":virtual_tuner_core",
+        "//cuttlefish/flag_parser",
+        "//cuttlefish/host/libs/config:logging",
+        "@abseil-cpp//absl/log",
+        "@grpc//:grpc++",
+        "@grpc//:grpc++_reflection",
     ],
 )
 
@@ -50,7 +80,23 @@ cf_cc_test(
     depend_on_what_you_use_enabled = False,
     include_cleaner_enabled = False,
     deps = [
-        ":tuner_state",
         ":virtual_tuner_cc_proto",
+        ":virtual_tuner_core",
+    ],
+)
+
+cf_cc_test(
+    name = "virtual_tuner_daemon_test",
+    srcs = [
+        "virtual_tuner_daemon_test.cpp",
+    ],
+    depend_on_what_you_use_enabled = False,
+    include_cleaner_enabled = False,
+    deps = [
+        ":libcvd_virtual_tuner",
+        ":virtual_tuner_cc_proto",
+        ":virtual_tuner_core",
+        "//cuttlefish/common/libs/fs",
+        "@grpc//:grpc++",
     ],
 )
