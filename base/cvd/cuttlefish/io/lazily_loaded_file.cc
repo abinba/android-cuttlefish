@@ -31,13 +31,12 @@
 #include "absl/log/log.h"
 
 #include "cuttlefish/common/libs/fs/fd.h"
-#include "cuttlefish/common/libs/fs/shared_buf.h"
-#include "cuttlefish/common/libs/fs/shared_fd.h"
 #include "cuttlefish/common/libs/utils/files.h"
 #include "cuttlefish/io/disjoint_range_set.h"
 #include "cuttlefish/io/io.h"
 #include "cuttlefish/io/serialize_disjoint_range_set.h"
 #include "cuttlefish/io/string.h"
+#include "cuttlefish/io/write_exact.h"
 #include "cuttlefish/result/result.h"
 
 namespace cuttlefish {
@@ -52,7 +51,7 @@ struct LazilyLoadedFile::Impl {
   Result<size_t> Read(char*, size_t);
 
   std::string filename_;
-  SharedFD contents_file_;
+  Fd contents_file_;
   std::unique_ptr<ReaderSeeker> callback_;
   DisjointRangeSet already_downloaded_;
   size_t seek_pos_;
@@ -65,7 +64,7 @@ Result<LazilyLoadedFile> LazilyLoadedFile::Create(
   std::unique_ptr<Impl> impl = std::make_unique<Impl>();
   CF_EXPECT(impl.get());
 
-  impl->contents_file_ = SharedFD::Open(filename, O_CREAT | O_RDWR, 0644);
+  impl->contents_file_ = CF_EXPECT(Fd::Open(filename, O_CREAT | O_RDWR, 0644));
   impl->filename_ = std::move(filename);
   impl->callback_ = std::move(callback);
   impl->seek_pos_ = 0;
@@ -117,11 +116,9 @@ std::string LazilyLoadedFile::Impl::MetadataFile() const {
 }
 
 Result<void> LazilyLoadedFile::Impl::ReadMetadata() {
-  SharedFD metadata_fd = SharedFD::Open(MetadataFile(), O_CREAT | O_RDWR, 0644);
-  CF_EXPECTF(metadata_fd->IsOpen(), "Failed to open {}: {}", MetadataFile(),
-             metadata_fd->StrError());
+  Fd metadata_fd = CF_EXPECT(Fd::Open(MetadataFile(), O_CREAT | O_RDWR, 0644));
 
-  const std::string data = CF_EXPECT(ReadToString(*metadata_fd));
+  const std::string data = CF_EXPECT(ReadToString(metadata_fd));
 
   Result<DisjointRangeSet> parsed_res = DeserializeDisjointRangeSet(data);
   if (parsed_res.has_value()) {
@@ -134,25 +131,21 @@ Result<void> LazilyLoadedFile::Impl::ReadMetadata() {
 }
 
 Result<void> LazilyLoadedFile::Impl::WriteMetadata() {
-  std::string new_metadata_name = MetadataFile() + ".XXXXXX";
-  SharedFD new_metadata = Fd::Mkstemp(&new_metadata_name);
-  CF_EXPECT(new_metadata->IsOpen(), new_metadata->StrError());
-  CF_EXPECT(new_metadata->Chmod(0644));
+  std::pair<Fd, std::string> fd_name =
+      CF_EXPECT(Fd::Mkostemp(MetadataFile() + "."));
+  CF_EXPECT(fd_name.first.Chmod(0644));
 
-  std::string data = Serialize(already_downloaded_);
-  CF_EXPECT_EQ(WriteAll(new_metadata, data), data.size(),
-               new_metadata->StrError());
+  const std::string data = Serialize(already_downloaded_);
+  CF_EXPECT(WriteExact(fd_name.first, data));
 
-  CF_EXPECT(RenameFile(new_metadata_name, MetadataFile()));
+  CF_EXPECT(RenameFile(fd_name.second, MetadataFile()));
 
   return {};
 }
 
 Result<size_t> LazilyLoadedFile::Impl::Read(char* data, size_t size) {
   VLOG(1) << "Reading " << size << ", seek pos " << seek_pos_;
-  // NOLINTNEXTLINE(misc-include-cleaner): SEEK_SET
-  CF_EXPECT_EQ(contents_file_->LSeek(seek_pos_, SEEK_SET), seek_pos_,
-               contents_file_->StrError());
+  CF_EXPECT(contents_file_.SeekSet(seek_pos_));
   auto all_ranges = already_downloaded_.AllRanges();
   for (const auto& range : all_ranges) {
     VLOG(1) << "Already downloaded: [" << range.first << ", " << range.second
@@ -164,7 +157,7 @@ Result<size_t> LazilyLoadedFile::Impl::Read(char* data, size_t size) {
   // minimizing bandwidth usage.
   if (end_of_present_data.has_value()) {
     size_t read_request = std::min(*end_of_present_data - seek_pos_, size);
-    size_t data_read = CF_EXPECT(contents_file_->Read(data, read_request));
+    size_t data_read = CF_EXPECT(contents_file_.Read(data, read_request));
     VLOG(1) << "Read " << data_read << " from local storage, seek pos was "
             << seek_pos_;
     seek_pos_ += data_read;
@@ -177,9 +170,7 @@ Result<size_t> LazilyLoadedFile::Impl::Read(char* data, size_t size) {
             << extended_read_size;
     size_t data_read = CF_EXPECT(
         callback_->Read(extended_read_buffer_.data(), extended_read_size));
-    CF_EXPECT_EQ(
-        WriteAll(contents_file_, extended_read_buffer_.data(), data_read),
-        data_read, contents_file_->StrError());
+    CF_EXPECT(WriteExact(contents_file_, extended_read_buffer_));
     already_downloaded_.InsertRange(seek_pos_, seek_pos_ + data_read);
     VLOG(1) << "Read " << data_read << " from source, seek pos was "
             << seek_pos_;
@@ -190,8 +181,7 @@ Result<size_t> LazilyLoadedFile::Impl::Read(char* data, size_t size) {
   } else {
     VLOG(1) << "Passing down read request of " << size;
     size_t data_read = CF_EXPECT(callback_->Read(data, size));
-    CF_EXPECT_EQ(WriteAll(contents_file_, data, data_read), data_read,
-                 contents_file_->StrError());
+    CF_EXPECT(WriteExact(contents_file_, data, data_read));
     already_downloaded_.InsertRange(seek_pos_, seek_pos_ + data_read);
     VLOG(1) << "Read " << data_read << " from source, seek pos was "
             << seek_pos_;

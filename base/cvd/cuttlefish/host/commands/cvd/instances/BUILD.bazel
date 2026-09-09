@@ -37,6 +37,7 @@ cf_cc_library(
     include_cleaner_enabled = False,
     deps = [
         "//cuttlefish/common/libs/fs",
+        "//cuttlefish/common/libs/fs:fd",
         "//cuttlefish/common/libs/utils:signals",
         "//cuttlefish/host/commands/cvd/instances:cvd_persistent_data",
         "//cuttlefish/io:string",
@@ -66,7 +67,7 @@ cf_cc_library(
     depend_on_what_you_use_enabled = False,
     include_cleaner_enabled = False,
     deps = [
-        "//cuttlefish/common/libs/fs",
+        "//cuttlefish/common/libs/fs:fd",
         "//cuttlefish/common/libs/utils:files",
         "//cuttlefish/files:recursively_remove_directory",
         "//cuttlefish/host/commands/cvd/instances",
@@ -112,6 +113,7 @@ cf_cc_library(
     deps = [
         ":cvd_persistent_data",
         "//cuttlefish/common/libs/fs",
+        "//cuttlefish/common/libs/fs:fd",
         "//cuttlefish/common/libs/utils:contains",
         "//cuttlefish/common/libs/utils:files",
         "//cuttlefish/common/libs/utils:gflags_xml_parser",
@@ -181,8 +183,8 @@ cf_cc_library(
         "//cuttlefish/host/libs/config:config_constants",
         "//cuttlefish/host/libs/config:config_utils",
         "//cuttlefish/host/libs/config:cuttlefish_config",
-        "//cuttlefish/host/libs/metrics:device_metrics_orchestration",
         "//cuttlefish/host/libs/screen_recording_controls",
+        "//cuttlefish/metrics:device_metrics_orchestration",
         "//cuttlefish/posix:remove",
         "//cuttlefish/posix:symlink",
         "//cuttlefish/process:command",

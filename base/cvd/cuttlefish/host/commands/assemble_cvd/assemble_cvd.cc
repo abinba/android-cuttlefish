@@ -17,7 +17,6 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #include <iostream>
@@ -41,8 +40,7 @@
 #include "fruit/injector.h"
 #include "gflags/gflags.h"
 
-#include "cuttlefish/common/libs/fs/shared_buf.h"
-#include "cuttlefish/common/libs/fs/shared_fd.h"
+#include "cuttlefish/common/libs/fs/fd.h"
 #include "cuttlefish/common/libs/utils/contains.h"
 #include "cuttlefish/common/libs/utils/files.h"
 #include "cuttlefish/common/libs/utils/in_sandbox.h"
@@ -98,11 +96,13 @@
 #include "cuttlefish/host/libs/config/fastboot/fastboot.h"
 #include "cuttlefish/host/libs/config/fetcher_configs.h"
 #include "cuttlefish/host/libs/config/file_source.h"
+#include "cuttlefish/host/libs/config/instance_nums.h"
 #include "cuttlefish/host/libs/config/log_string_to_dir.h"
 #include "cuttlefish/host/libs/feature/feature.h"
 #include "cuttlefish/host/libs/feature/inject.h"
 #include "cuttlefish/host/libs/log_names/log_names.h"
 #include "cuttlefish/io/string.h"
+#include "cuttlefish/io/write_exact.h"
 #include "cuttlefish/posix/remove.h"
 #include "cuttlefish/posix/symlink.h"
 #include "cuttlefish/pretty/vector.h"
@@ -295,13 +295,13 @@ Result<std::set<std::string>> PreservingOnResume(
   return preserving;
 }
 
-Result<SharedFD> SetLogger(std::string runtime_dir_parent) {
-  SharedFD log_file;
+SharedFD SetLogger(std::string runtime_dir_parent) {
+  Result<SharedFD> log_file;
   if (InSandbox()) {
     log_file =
-        SharedFD::Open(absl::StrCat(runtime_dir_parent,
-                                    "/instances/cvd-1/logs/", kLogNameLauncher),
-                       O_WRONLY | O_APPEND);
+        Fd::Open(absl::StrCat(runtime_dir_parent, "/instances/cvd-1/logs/",
+                              kLogNameLauncher),
+                 O_WRONLY | O_APPEND);
   } else {
     while (runtime_dir_parent[runtime_dir_parent.size() - 1] == '/') {
       runtime_dir_parent =
@@ -309,22 +309,22 @@ Result<SharedFD> SetLogger(std::string runtime_dir_parent) {
     }
     runtime_dir_parent =
         runtime_dir_parent.substr(0, FLAGS_instance_dir.rfind('/'));
-    log_file = SharedFD::Open(runtime_dir_parent, O_WRONLY | O_TMPFILE,
-                              S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+    log_file = Fd::Open(runtime_dir_parent, O_WRONLY | O_TMPFILE,
+                        S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
   }
-  if (!log_file->IsOpen()) {
-    LOG(ERROR) << "Could not open initial log file: " << log_file->StrError();
+  if (!log_file.has_value()) {
+    LOG(ERROR) << "Could not open initial log file: " << log_file.error();
   } else {
     std::vector<SeverityTarget> log_destinations = {
         SeverityTarget::FromFd(SharedFD::Dup(2), MetadataLevel::ONLY_MESSAGE,
                                ConsoleSeverity()),
-        SeverityTarget::FromFd(log_file, MetadataLevel::FULL,
+        SeverityTarget::FromFd(*log_file, MetadataLevel::FULL,
                                LogFileSeverity()),
 
     };
     SetLoggers(std::move(log_destinations), "");
   }
-  return log_file;
+  return log_file.value_or(Fd());
 }
 
 Result<const CuttlefishConfig*> InitFilesystemAndCreateConfig(
@@ -355,24 +355,20 @@ Result<const CuttlefishConfig*> InitFilesystemAndCreateConfig(
 
       // Add a delimiter to each log file so that we can clearly tell what
       // happened before vs after the restore.
-      const std::string snapshot_delimiter =
+      static constexpr std::string_view kSnapshotDelimiter =
           "\n\n\n"
           "============ SNAPSHOT RESTORE POINT ============\n"
           "Lines above are pre-snapshot.\n"
           "Lines below are post-restore.\n"
           "================================================\n"
           "\n\n\n";
-      for (const auto& instance : config.Instances()) {
-        const auto log_files =
-            CF_EXPECT(DirectoryContents(instance.PerInstanceLogPath("")));
-        for (const auto& filename : log_files) {
-          const std::string path = instance.PerInstanceLogPath(filename);
-          auto fd = SharedFD::Open(path, O_WRONLY | O_APPEND);
-          CF_EXPECT(fd->IsOpen(),
-                    "failed to open " << path << ": " << fd->StrError());
-          const ssize_t n = WriteAll(fd, snapshot_delimiter);
-          CF_EXPECT(n == snapshot_delimiter.size(),
-                    "failed to write to " << path << ": " << fd->StrError());
+      for (const CuttlefishConfig::InstanceSpecific& ins : config.Instances()) {
+        const std::vector<std::string> log_files =
+            CF_EXPECT(DirectoryContents(ins.PerInstanceLogPath("")));
+        for (const std::string_view filename : log_files) {
+          const std::string path = ins.PerInstanceLogPath(filename);
+          Fd fd = CF_EXPECT(Fd::Open(path, O_WRONLY | O_APPEND));
+          CF_EXPECT(WriteExact(fd, kSnapshotDelimiter));
         }
       }
     }
@@ -450,10 +446,7 @@ Result<const CuttlefishConfig*> InitFilesystemAndCreateConfig(
     }
 
     if (!snapshot_path.empty()) {
-      SharedFD temp = SharedFD::Creat(config.AssemblyPath("restore"), 0660);
-      if (!temp->IsOpen()) {
-        return CF_ERR("Failed to create restore file: " << temp->StrError());
-      }
+      CF_EXPECT(Fd::Creat(config.AssemblyPath("restore"), 0660));
     }
 
     auto environment =
@@ -531,6 +524,23 @@ Result<void> VerifyConditionsOnSnapshotRestore(
                "--snapshot_path does not allow customizing --instance_dir");
   CF_EXPECT_EQ(assembly_dir, CF_DEFAULTS_ASSEMBLY_DIR,
                "--snapshot_path does not allow customizing --assembly_dir");
+
+  // We can't change the instance num as part of restore, so error early if it
+  // doesn't match.
+  const auto meta_json = CF_EXPECT(LoadMetaJson(snapshot_path));
+  CF_EXPECT(meta_json.isMember(kGuestSnapshotField),
+            "Snapshot meta json missing guest_snapshot field.");
+  const auto& guest_snapshot = meta_json[kGuestSnapshotField];
+  CF_EXPECT_EQ(guest_snapshot.size(), 1,
+               "Snapshot must contain exactly one instance");
+  const std::vector<int> target_nums =
+      CF_EXPECT(InstanceNumsCalculator().FromGlobalGflags().Calculate());
+  CF_EXPECT_EQ(target_nums.size(), 1,
+               "Restoring multiple instances is not supported");
+  const std::string snapshot_num = guest_snapshot.getMemberNames()[0];
+  const std::string target_num = std::to_string(target_nums[0]);
+  CF_EXPECT_EQ(target_num, snapshot_num,
+               "Requested instance num does not match snapshot");
   return {};
 }
 
@@ -596,7 +606,7 @@ Result<AndroidBuilds> FindAndroidBuilds(
 }  // namespace
 
 Result<int> AssembleCvdMain(int argc, char** argv) {
-  auto log = CF_EXPECT(SetLogger(AbsolutePath(FLAGS_instance_dir)));
+  SharedFD log = SetLogger(AbsolutePath(FLAGS_instance_dir));
   VLOG(0) << "received flags: "
           << absl::StrJoin(std::vector<std::string>(argv + 1, argv + argc),
                            " ");

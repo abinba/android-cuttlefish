@@ -1,6 +1,6 @@
 # this needs to be at parity with with build_external/crosvm/crosvm.config.toml
 CROSVM_REMOTE = "https://chromium.googlesource.com/crosvm/crosvm"
-CROSVM_REV = "77b782606b436067aaeb30f7e4b79c68e7962303"
+CROSVM_REV = "fd4df63707aee57092a28db63bc1ff8945c76058"
 
 # note that this won't use the same source checkout as the git_repository directive below
 #
@@ -13,24 +13,19 @@ crosvm_bin = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate"
 crosvm_bin.spec(
     artifact = "bin",
     package = "crosvm",
+    default_features = False,
     features = [
         "android-sparse",
-        "android_display",
-        "android_display_stub",
         "audio",
-        "audio_aaudio",
         "balloon",
         "composite-disk",
         "fs_runtime_ugid_map",
         "gdb",
         "gdbstub",
         "gdbstub_arch",
-        "geniezone",
         "gfxstream",
         "gpu",
         "gpu_display",
-        "gunyah",
-        "libaaudio_stub",
         "net",
         "net_util",
         "qcow",

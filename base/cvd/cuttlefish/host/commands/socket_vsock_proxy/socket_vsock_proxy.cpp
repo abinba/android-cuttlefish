@@ -14,10 +14,14 @@
  * limitations under the License.
  */
 
+#include <fcntl.h>
+#include <linux/vm_sockets.h>
 #include <signal.h>
+#include <unistd.h>
 
 #include <chrono>
 #include <memory>
+#include <optional>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
@@ -25,6 +29,7 @@
 
 #include "cuttlefish/common/libs/fs/shared_fd.h"
 #include "cuttlefish/common/libs/utils/socket2socket_proxy.h"
+#include "cuttlefish/host/commands/kernel_log_monitor/kernel_log_server.h"
 #include "cuttlefish/host/commands/kernel_log_monitor/utils.h"
 #include "cuttlefish/host/commands/socket_vsock_proxy/client.h"
 #include "cuttlefish/host/commands/socket_vsock_proxy/server.h"
@@ -171,11 +176,7 @@ static Result<void> ListenEventsAndProxy(int events_fd,
     auto config = CF_EXPECT(CuttlefishConfig::Get());
     auto instance = config->ForDefaultInstance();
     SharedFD restore_pipe_read =
-        SharedFD::Open(RestoreAdbdPipeName(instance), O_RDONLY);
-    if (!restore_pipe_read->IsOpen()) {
-      return CF_ERR(
-          "Error opening restore pipe: " << restore_pipe_read->StrError());
-    }
+        CF_EXPECT(Fd::Open(RestoreAdbdPipeName(instance), O_RDONLY));
     // Try to read from restore pipe. IF successfully reads, that means logcat
     // has started, and the VM has resumed. Exit the thread.
     // TODO (@khei): Add a device status tracking mechanism. b/325614380

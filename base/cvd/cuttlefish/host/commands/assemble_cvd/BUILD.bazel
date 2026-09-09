@@ -25,7 +25,7 @@ cf_cc_binary(
     name = "assemble_cvd",
     srcs = ["assemble_cvd.cc"],
     deps = [
-        "//cuttlefish/common/libs/fs",
+        "//cuttlefish/common/libs/fs:fd",
         "//cuttlefish/common/libs/utils:contains",
         "//cuttlefish/common/libs/utils:environment",
         "//cuttlefish/common/libs/utils:files",
@@ -77,6 +77,7 @@ cf_cc_binary(
         "//cuttlefish/host/libs/config:cuttlefish_config",
         "//cuttlefish/host/libs/config:fetcher_configs",
         "//cuttlefish/host/libs/config:file_source",
+        "//cuttlefish/host/libs/config:instance_nums",
         "//cuttlefish/host/libs/config:log_string_to_dir",
         "//cuttlefish/host/libs/config/adb",
         "//cuttlefish/host/libs/config/defaults",
@@ -85,6 +86,7 @@ cf_cc_binary(
         "//cuttlefish/host/libs/feature:inject",
         "//cuttlefish/host/libs/log_names",
         "//cuttlefish/io:string",
+        "//cuttlefish/io:write_exact",
         "//cuttlefish/posix:remove",
         "//cuttlefish/posix:symlink",
         "//cuttlefish/pretty:vector",
@@ -126,6 +128,7 @@ cf_cc_library(
     hdrs = ["boot_image_utils.h"],
     deps = [
         "//cuttlefish/common/libs/fs",
+        "//cuttlefish/common/libs/fs:fd",
         "//cuttlefish/common/libs/utils:files",
         "//cuttlefish/files:file_exists",
         "//cuttlefish/host/commands/assemble_cvd/boot_image",
@@ -186,6 +189,7 @@ cf_cc_library(
         "//cuttlefish/common/libs/utils:in_sandbox",
         "//cuttlefish/files:directory_contents",
         "//cuttlefish/host/libs/config:config_utils",
+        "//cuttlefish/posix:stat",
         "//cuttlefish/posix:strerror",
         "//cuttlefish/process:proc_file_utils",
         "//cuttlefish/result",
@@ -542,6 +546,7 @@ cf_cc_library(
     deps = [
         "//cuttlefish/host/commands/cvdalloc:interface",
         "//cuttlefish/host/libs/config:cuttlefish_config",
+        "//cuttlefish/host/libs/config:external_network_mode",
         "//cuttlefish/result",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/strings",

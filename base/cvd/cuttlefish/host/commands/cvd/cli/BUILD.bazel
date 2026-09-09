@@ -133,6 +133,7 @@ cf_cc_library(
         "//cuttlefish/host/commands/cvd/cli/commands:command_handler",
         "//cuttlefish/host/commands/cvd/cli/commands:display",
         "//cuttlefish/host/commands/cvd/cli/commands:env",
+        "//cuttlefish/host/commands/cvd/cli/commands:event_devices",
         "//cuttlefish/host/commands/cvd/cli/commands:fetch",
         "//cuttlefish/host/commands/cvd/cli/commands:fleet",
         "//cuttlefish/host/commands/cvd/cli/commands:host_tool_target",
@@ -185,7 +186,7 @@ cf_cc_library(
     deps = [
         ":command_request",
         "//cuttlefish/ansi_codes:terminal_colors",
-        "//cuttlefish/common/libs/fs",
+        "//cuttlefish/common/libs/fs:fd",
         "//cuttlefish/common/libs/utils:contains",
         "//cuttlefish/common/libs/utils:files",
         "//cuttlefish/common/libs/utils:gflags_xml_parser",
