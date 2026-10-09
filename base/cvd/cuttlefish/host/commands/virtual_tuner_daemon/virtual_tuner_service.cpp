@@ -22,6 +22,7 @@
 #include "absl/log/log.h"
 
 #include "cuttlefish/host/commands/virtual_tuner_daemon/VirtualTuner.pb.h"
+#include "cuttlefish/host/commands/virtual_tuner_daemon/audio_generator.h"
 #include "cuttlefish/host/commands/virtual_tuner_daemon/tuner_state.h"
 
 namespace cuttlefish {
@@ -33,13 +34,14 @@ VirtualTunerServiceImpl::VirtualTunerServiceImpl(TunerState& tuner_state)
 ::grpc::Status VirtualTunerServiceImpl::Tune(::grpc::ServerContext*,
                                              const TuneRequest* request,
                                              TuneResponse* response) {
+  tuner_state_.SetTune(request->band(), request->frequency_hz(),
+                       request->hd_subchannel());
+
   LOG(INFO) << "Tune request received: Band=" << RadioBand_Name(request->band())
             << "(" << request->band() << "), Freq=" << request->frequency_hz()
             << " Hz"
-            << ", HD=" << request->hd_subchannel();
-
-  tuner_state_.SetTune(request->band(), request->frequency_hz(),
-                       request->hd_subchannel());
+            << ", HD=" << request->hd_subchannel() << ", station tone "
+            << StationToneHz(tuner_state_.GetSnapshot()) << " Hz";
 
   response->set_success(true);
   response->set_message("Tuned successfully");

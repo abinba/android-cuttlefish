@@ -17,11 +17,14 @@
 #include "cuttlefish/host/commands/virtual_tuner_daemon/audio_generator.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <numbers>
 #include <random>
 #include <span>
 
+#include "cuttlefish/host/commands/virtual_tuner_daemon/VirtualTuner.pb.h"
 #include "cuttlefish/host/commands/virtual_tuner_daemon/tuner_state.h"
 
 namespace cuttlefish {
@@ -29,8 +32,32 @@ namespace virtualtuner {
 namespace {
 
 constexpr int16_t kNoiseAmplitude = 4000;
+// A tuned station plays its tone plus a little static. The peaks add up to
+// kNoiseAmplitude, so the output stays within the same range as plain noise.
+constexpr double kToneAmplitude = 3400.0;
+constexpr int16_t kStationNoiseAmplitude = 600;
+constexpr double kTwoPi = 2.0 * std::numbers::pi;
 
 }  // namespace
+
+double StationToneHz(const TunerStateSnapshot& snapshot) {
+  const uint32_t khz = snapshot.frequency_hz / 1000;
+  if (khz == 0) {
+    return 0.0;
+  }
+  double tone_hz = 0.0;
+  switch (snapshot.band) {
+    case RadioBand::AM:
+      tone_hz = 300.0 + 0.5 * (std::max<uint32_t>(khz, 530) - 530);
+      break;
+    case RadioBand::FM:
+      tone_hz = 300.0 + (std::max<uint32_t>(khz, 87500) - 87500) / 10.0;
+      break;
+    default:
+      return 0.0;
+  }
+  return tone_hz + 1000.0 * snapshot.hd_subchannel;
+}
 
 AudioGenerator::AudioGenerator() : rng_(std::random_device()()) {}
 
@@ -41,10 +68,28 @@ void AudioGenerator::GenerateChunk(std::span<int16_t> samples,
     return;
   }
 
-  std::uniform_int_distribution<int> noise(-kNoiseAmplitude, kNoiseAmplitude);
+  const double tone_hz = StationToneHz(snapshot);
+  if (tone_hz <= 0.0) {
+    std::uniform_int_distribution<int> noise(-kNoiseAmplitude, kNoiseAmplitude);
+    for (size_t frame = 0; frame + kChannels <= samples.size();
+         frame += kChannels) {
+      const auto sample = static_cast<int16_t>(noise(rng_));
+      for (size_t channel = 0; channel < kChannels; ++channel) {
+        samples[frame + channel] = sample;
+      }
+    }
+    return;
+  }
+
+  std::uniform_int_distribution<int> noise(-kStationNoiseAmplitude,
+                                           kStationNoiseAmplitude);
+  const double phase_step = kTwoPi * tone_hz / kSampleRate;
   for (size_t frame = 0; frame + kChannels <= samples.size();
        frame += kChannels) {
-    const auto sample = static_cast<int16_t>(noise(rng_));
+    const int tone =
+        static_cast<int>(std::lround(kToneAmplitude * std::sin(phase_)));
+    const auto sample = static_cast<int16_t>(tone + noise(rng_));
+    phase_ = std::fmod(phase_ + phase_step, kTwoPi);
     for (size_t channel = 0; channel < kChannels; ++channel) {
       samples[frame + channel] = sample;
     }

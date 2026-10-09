@@ -34,6 +34,13 @@ inline constexpr size_t kFrameSizeBytes = kChannels * kBytesPerSample;
 inline constexpr size_t kChunkFrames = 4096;
 inline constexpr size_t kChunkSizeBytes = kChunkFrames * kFrameSizeBytes;
 
+// Tone that identifies the tuned station, so that stations can be told apart
+// by ear and by FFT. FM: 300 Hz at 87.5 MHz plus 10 Hz per 100 kHz. AM: 300 Hz
+// at 530 kHz plus 0.5 Hz per kHz. Each HD subchannel above HD1 adds 1 kHz
+// (HD1 simulcasts the analog program). Returns 0 when there is no AM/FM
+// frequency, in which case only noise is played.
+double StationToneHz(const TunerStateSnapshot& snapshot);
+
 class AudioGenerator {
  public:
   AudioGenerator();
@@ -43,6 +50,8 @@ class AudioGenerator {
 
  private:
   std::minstd_rand rng_;
+  // Kept across chunks so the tone stays continuous.
+  double phase_ = 0.0;
 };
 
 }  // namespace virtualtuner
